@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/slack-refresh.js": {
+      "runtime": "nodejs20.x"
+    }
+  }
+}
