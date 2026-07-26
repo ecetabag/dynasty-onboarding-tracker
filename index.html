@@ -992,7 +992,9 @@ async function refreshSlack() {
     saveLS('dynasty_last_slack_refresh', lastSlackRefresh);
     if (newLiveCount > 0) showBanner(newLiveCount + ' client(s) upgraded to Live based on new Slack activity since the last snapshot.', 'info');
   } catch (err) {
-    showBanner('Slack refresh failed: ' + (err.message||err) + '. Showing last known data.', 'info');
+    // Fail quietly: no alarming banner, just leave the sync line showing whatever
+    // the last known-good refresh time was (or "not yet refreshed" if there isn't one).
+    console.warn('Slack refresh failed:', err.message||err);
   }
   slackRefreshInFlight = false;
   document.getElementById('refreshBtn').textContent = 'Refresh Slack now';
