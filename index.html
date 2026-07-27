@@ -234,6 +234,11 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
     </div>
     <p class="sub" style="margin:4px 0 14px;">Each row is one month of sign-ups. "Live rate" is the percentage of that month's sign-ups who eventually became paying clients &mdash; the color bar makes it easy to spot strong vs. weak months at a glance.</p>
     <div class="card" style="margin-bottom:16px;">
+      <h3>Sign-ups per month, and how many went live</h3>
+      <p class="sub" style="margin-top:-4px;">Each pair of bars is one month: how many people signed up, and how many of them are Live &amp; paying today.</p>
+      <div class="chart-box"><canvas id="monthlyChart"></canvas></div>
+    </div>
+    <div class="card" style="margin-bottom:16px;">
       <div class="table-scroll"><table id="cohortTable"></table></div>
     </div>
     <div class="card">
@@ -388,16 +393,21 @@ function renderMetrics() {
   const fundingPending = clients.filter(c=>c.status==="Funding Pending").length;
   const stalled = clients.filter(c=>c.stalled_category).length;
   const churned = clients.filter(c=>c.is_churned && !c.is_conflict).length;
-  const review = RAW.review_queue.length + clients.filter(c=>c.confidence_notes && c.confidence_notes.length).length;
-  const conflicting = clients.filter(c=>c.is_conflict || (c.confidence_notes && c.confidence_notes.length)).length;
+  const flaggedForReview = clients.filter(c=>c.confidence_notes && c.confidence_notes.length).length;
+  const review = RAW.review_queue.length + flaggedForReview;
+  const conflicting = clients.filter(c=>c.is_conflict).length;
 
-  const needsAttention = stalled + review + conflicting;
+  // Count each client once even if they qualify for more than one reason (e.g. both
+  // stalled and flagged for review), so this doesn't double-count the same person.
+  const needsAttention = new Set(
+    clients.filter(c=>c.stalled_category || c.is_conflict || (c.confidence_notes && c.confidence_notes.length)).map(c=>c.id)
+  ).size;
 
   const headlineCards = [
     ["Total clients", total, "Everyone in the system, from brand-new sign-ups to long-time paying clients."],
     ["Live &amp; paying", live, "Their trust is funded &mdash; the whole process is complete."],
     ["Still onboarding", notLive - churned, "In progress somewhere between sign-up and going live."],
-    ["Needs attention", needsAttention, "Stalled, waiting on a decision, or has conflicting info."],
+    ["Needs attention", needsAttention, stalled+" stalled, "+(needsAttention-stalled)+" waiting on a decision or have conflicting info."],
   ];
   document.getElementById('metricsGrid').innerHTML = headlineCards.map(([lbl,num,desc])=>
     '<div class="metric-card"><div class="num">'+num+'</div><div class="lbl">'+lbl+'</div><div class="lbl" style="margin-top:4px; font-size:11px;">'+desc+'</div></div>'
@@ -656,6 +666,27 @@ function renderCohorts() {
   document.getElementById('heatmapTable').innerHTML = monthRows.length ? heatHtml : '<tbody><tr><td class="empty">No dated cohorts yet.</td></tr></tbody>';
 
   window._cohortRows = rows;
+  renderMonthlyChart(monthRows);
+}
+
+let monthlyChartInstance = null;
+function renderMonthlyChart(monthRows) {
+  const canvas = document.getElementById('monthlyChart');
+  if (!canvas) return;
+  const rows = monthRows || (window._cohortRows||[]).filter(([name,b])=>b.isRealMonth);
+  const labels = rows.map(([name])=>name);
+  const signedUp = rows.map(([,b])=>b.total);
+  const live = rows.map(([,b])=>b.live);
+  if (monthlyChartInstance) monthlyChartInstance.destroy();
+  if (!rows.length) return;
+  monthlyChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: { labels, datasets: [
+      { label:'Signed up', data: signedUp, backgroundColor: '#9fb3cc' },
+      { label:'Now live', data: live, backgroundColor: '#1a3a6b' },
+    ] },
+    options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:true, position:'top'}}, scales:{y:{beginAtZero:true, ticks:{precision:0}}} }
+  });
 }
 
 // ---------- Monthly stage breakdown ----------
@@ -1046,6 +1077,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     document.querySelectorAll('.tabpanel').forEach(p=>p.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'cohorts') renderMonthlyChart();
   });
 });
 document.getElementById('drawerClose').addEventListener('click', closeDrawer);
