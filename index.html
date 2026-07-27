@@ -393,14 +393,20 @@ function renderMetrics() {
   const fundingPending = clients.filter(c=>c.status==="Funding Pending").length;
   const stalled = clients.filter(c=>c.stalled_category).length;
   const churned = clients.filter(c=>c.is_churned && !c.is_conflict).length;
-  const flaggedForReview = clients.filter(c=>c.confidence_notes && c.confidence_notes.length).length;
+  // Only count items still actually pending in the "Needs Your Input" tab -- once you
+  // Approve/Reject a fuzzy match or resolve a conflict there, it's saved to your browser
+  // (reviewDecisions / overrides) and should stop counting here too, so this number always
+  // matches what you'd actually see if you opened that tab.
+  const isPendingReview = c => c.confidence_notes && c.confidence_notes.length && !reviewDecisions[c.id];
+  const isPendingConflict = c => c.is_conflict && !(overrides[c.id]?.status_override);
+  const flaggedForReview = clients.filter(isPendingReview).length;
   const review = RAW.review_queue.length + flaggedForReview;
-  const conflicting = clients.filter(c=>c.is_conflict).length;
+  const conflicting = clients.filter(isPendingConflict).length;
 
   // Count each client once even if they qualify for more than one reason (e.g. both
   // stalled and flagged for review), so this doesn't double-count the same person.
   const needsAttention = new Set(
-    clients.filter(c=>c.stalled_category || c.is_conflict || (c.confidence_notes && c.confidence_notes.length)).map(c=>c.id)
+    clients.filter(c=>c.stalled_category || isPendingConflict(c) || isPendingReview(c)).map(c=>c.id)
   ).size;
 
   const headlineCards = [
