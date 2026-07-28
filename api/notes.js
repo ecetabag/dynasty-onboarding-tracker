@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       }
 
       const rows = await sql`
-        SELECT author_name, author_email, text, created_at
+        SELECT id, author_name, author_email, text, created_at
         FROM notes
         WHERE client_id = ${client_id}
         ORDER BY created_at DESC
@@ -35,10 +35,32 @@ export default async function handler(req, res) {
       const rows = await sql`
         INSERT INTO notes (client_id, author_email, author_name, text)
         VALUES (${client_id}, ${session.email}, ${session.name || session.email}, ${text.trim()})
-        RETURNING author_name, author_email, text, created_at
+        RETURNING id, author_name, author_email, text, created_at
       `;
 
       return res.status(201).json({ note: rows[0] });
+    }
+
+    if (req.method === 'DELETE') {
+      const session = await requireSession(req, res);
+      if (!session) return;
+
+      const { id } = req.body || {};
+      if (!id) {
+        return res.status(400).json({ error: 'note id required' });
+      }
+
+      const rows = await sql`
+        DELETE FROM notes
+        WHERE id = ${id}
+        RETURNING id
+      `;
+
+      if (!rows.length) {
+        return res.status(404).json({ error: 'Note not found' });
+      }
+
+      return res.status(200).json({ deleted: true, id: rows[0].id });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
