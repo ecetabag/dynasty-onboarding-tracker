@@ -372,6 +372,19 @@ function loadLS(key, fallback) {
 }
 function saveLS(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
+async function readApiResponse(res) {
+  const raw = await res.text();
+  let data;
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    const preview = raw.slice(0, 220).replace(/\s+/g, ' ').trim();
+    throw new Error('Server returned ' + res.status + ': ' + (preview || 'empty response'));
+  }
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
 let overrides = loadLS('dynasty_overrides', {});
 let auditLog = loadLS('dynasty_audit_log', []);
 let liveOverlay = loadLS('dynasty_live_overlay', {}); // id -> {evidence:[], addedAt}
@@ -398,8 +411,7 @@ function companyStatusInfo(c) {
 async function loadCompanyStatuses() {
   try {
     const res = await fetch('/api/check-company');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const {checks} = await res.json();
+    const {checks} = await readApiResponse(res);
     companyStatusMap = {};
     (checks||[]).forEach(c => { companyStatusMap[c.client_id] = c; });
     renderAll();
@@ -926,8 +938,7 @@ function renderStageGapChart(canvasId, monthRows, gapFn, label) {
 async function loadReviewActions() {
   try {
     const res = await fetch('/api/review-actions');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const {actions} = await res.json();
+    const {actions} = await readApiResponse(res);
     reviewActions = {};
     actions.forEach(a => { reviewActions[reviewActionKey(a.client_id, a.kind)] = a; });
     renderAll();
@@ -940,8 +951,7 @@ async function saveReviewAction(clientId, kind, decision, reason) {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({client_id:clientId, kind, decision, reason}),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  const data = await readApiResponse(res);
   reviewActions[reviewActionKey(clientId, kind)] = data.action;
 }
 
@@ -1179,8 +1189,7 @@ async function loadNotes(id) {
   if (!el) return;
   try {
     const res = await fetch('/api/notes?client_id=' + encodeURIComponent(id));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const {notes} = await res.json();
+    const {notes} = await readApiResponse(res);
     renderNotesList(notes);
   } catch (err) {
     el.textContent = 'Could not load notes: ' + (err.message||err);
@@ -1198,8 +1207,7 @@ async function saveNote(id) {
       method: 'POST', headers: {'Content-Type':'application/json'},
       body: JSON.stringify({client_id:id, text}),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    const data = await readApiResponse(res);
     textEl.value = '';
     await loadNotes(id);
   } catch (err) {
@@ -1424,7 +1432,7 @@ async function loadCompanyCheck(id) {
   try {
     const res = await fetch('/api/check-company?client_id=' + encodeURIComponent(id));
     if (!res.ok) return;
-    const {check} = await res.json();
+    const {check} = await readApiResponse(res);
     if (check) renderCompanyCheckResult(check);
   } catch (err) {
     console.warn('Failed to load company check:', err.message||err);
@@ -1442,8 +1450,7 @@ async function checkCompanyStatus(id, company) {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({client_id:id, company}),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || ('HTTP '+res.status));
+    const data = await readApiResponse(res);
     renderCompanyCheckResult(data);
     companyStatusMap[id] = {client_id:id, verdict:data.verdict, rationale:data.rationale, checked_at:data.checked_at};
     renderBacklog();
@@ -1471,7 +1478,7 @@ async function batchCheckCompanies() {
         body: JSON.stringify({client_id:c.id, company:c.company}),
       });
       if (res.status === 501) { status.textContent = 'Groq API key not configured on this deployment.'; break; }
-      const data = await res.json();
+      const data = await readApiResponse(res);
       if (res.ok) {
         companyStatusMap[c.id] = {client_id:c.id, verdict:data.verdict, rationale:data.rationale, checked_at:data.checked_at};
         if (data.verdict === 'possibly_defunct') flagged++;
