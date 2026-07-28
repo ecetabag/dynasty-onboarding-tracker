@@ -143,6 +143,12 @@ a.link:hover { color:var(--accent-2); text-decoration:underline; }
 .form-row textarea { resize:vertical; min-height:50px; }
 .note-item { border-bottom:1px solid var(--border-soft); padding:9px 0; font-size:12px; }
 .note-item .n-meta { color:var(--ink-dim); font-size:11px; margin-top:2px; }
+.note-item-row { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.note-delete-btn { border:0; background:transparent; color:var(--red); padding:2px 4px; font-size:11px; cursor:pointer; flex:0 0 auto; }
+.note-delete-btn:hover { text-decoration:underline; background:transparent; }
+.company-updates-toolbar { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+.company-updates-toolbar .filter-group { min-width:240px; margin:0; }
+.company-status-detail { max-width:520px; white-space:normal; }
 .banner { background:var(--amber-bg); color:var(--amber); border:1px solid #f2ddac; border-radius:var(--radius-sm); padding:10px 14px; font-size:12px; font-weight:600; margin-bottom:14px; box-shadow:var(--shadow-xs); }
 .banner.info { background:var(--blue-bg); color:var(--blue); border-color:#c9dcf5; }
 .empty { color:var(--ink-dim); font-size:12.5px; padding:24px; text-align:center; }
@@ -185,7 +191,6 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
       <div class="header-actions">
         <div id="authStatus" class="sub" style="margin-right:8px; align-self:center;"></div>
         <button id="refreshBtn" class="primary">&#8635; Refresh Slack now</button>
-        <button id="batchCheckCompaniesBtn">&#128269; Check all active companies</button>
         <button id="exportCsvBtn">&#8681; Export CSV</button>
         <button id="exportPdfBtn">&#8681; Export PDF</button>
       </div>
@@ -198,7 +203,6 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
         <a href="https://getdynasty-workspace.slack.com/archives/C0ACNHJ1152" target="_blank">#trust-funding &#8599;</a>
       </div>
     </div>
-    <div class="sub" id="batchCheckStatus" style="margin-top:4px;"></div>
   </div>
 
   <div id="bannerArea"></div>
@@ -210,6 +214,7 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
     <div class="tab" data-tab="cohorts"><span class="tab-icon">&#128202;</span>Sign-up Trends</div>
     <div class="tab" data-tab="stagebreakdown"><span class="tab-icon">&#128506;&#65039;</span>Pipeline by Month</div>
     <div class="tab" data-tab="review"><span class="tab-icon">&#9989;</span>Needs Your Input</div>
+    <div class="tab" data-tab="companyupdates"><span class="tab-icon">&#127970;</span>Company Updates</div>
     <div class="tab" data-tab="audit"><span class="tab-icon">&#128337;</span>Change History</div>
   </div>
 
@@ -326,6 +331,27 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
     <h3 style="margin-top:22px;">Name matches we're not 100% sure about</h3>
     <p class="sub">These clients were linked to a Slack message using a "close enough" name match, not an exact one. Confirm it's correct, or reject it if it's the wrong person.</p>
     <div id="reviewFuzzyMatches"></div>
+  </div>
+
+  <div class="tabpanel" id="tab-companyupdates">
+    <div class="company-updates-toolbar">
+      <div>
+        <h3 style="margin:0 0 4px;">Company Updates</h3>
+        <p class="sub" style="margin:0;">Review trust names, associated companies, and the latest company status check.</p>
+      </div>
+      <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
+        <div class="filter-group"><label>Filter companies</label><input type="text" id="companyUpdatesSearch" placeholder="Trust or company name&hellip;"></div>
+        <button id="batchCheckCompaniesBtn" class="primary">&#128269; Search companies</button>
+      </div>
+    </div>
+    <div class="sub" id="batchCheckStatus" style="margin-bottom:10px;"></div>
+    <div class="count-note" id="companyUpdatesCount"></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Trust Name</th><th>Company Name</th><th>Company Status</th><th>Last Checked</th></tr></thead>
+        <tbody id="companyUpdatesBody"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="tabpanel" id="tab-audit">
@@ -1116,6 +1142,7 @@ function openDrawer(id) {
   document.getElementById('drawerContent').innerHTML = html;
   document.getElementById('saveOverrideBtn').addEventListener('click', ()=>saveOverride(id));
   document.getElementById('checkCompanyBtn').addEventListener('click', ()=>checkCompanyStatus(id, c.company));
+  document.getElementById('saveNoteBtn').dataset.clientId = id;
   document.getElementById('saveNoteBtn').addEventListener('click', ()=>saveNote(id));
   document.getElementById('overlay').classList.add('active');
   document.getElementById('drawer').classList.add('active');
@@ -1176,13 +1203,41 @@ function saveOverride(id) {
 }
 
 // ---------- Shared notes (Postgres-backed, requires sign-in to add) ----------
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 function renderNotesList(notes) {
   const el = document.getElementById('notesList');
   if (!el) return;
   el.className = '';
   el.innerHTML = notes.length ? notes.map(n=>
-    '<div class="note-item">'+n.text+'<div class="n-meta">'+(n.author_name||n.author_email)+' &middot; '+new Date(n.created_at).toLocaleString()+'</div></div>'
+    '<div class="note-item"><div class="note-item-row"><div>'+escapeHtml(n.text)+'</div>'
+      + '<button type="button" class="note-delete-btn" data-note-id="'+escapeHtml(n.id)+'">Delete</button></div>'
+      + '<div class="n-meta">'+escapeHtml(n.author_name||n.author_email)+' &middot; '+new Date(n.created_at).toLocaleString()+'</div></div>'
   ).join('') : '<div class="sub">No notes yet.</div>';
+  el.querySelectorAll('.note-delete-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>deleteNote(btn.dataset.noteId));
+  });
+}
+async function deleteNote(noteId) {
+  if (!noteId || !confirm('Delete this note?')) return;
+  try {
+    const res = await fetch('/api/notes', {
+      method:'DELETE',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id:noteId}),
+    });
+    await readApiResponse(res);
+    const clientId = document.getElementById('saveNoteBtn')?.dataset.clientId;
+    if (clientId) await loadNotes(clientId);
+  } catch (err) {
+    alert('Could not delete note: ' + (err.message||err));
+  }
 }
 async function loadNotes(id) {
   const el = document.getElementById('notesList');
@@ -1408,6 +1463,40 @@ function renderSyncLine() {
   document.getElementById('lastSyncLine').innerHTML = lastLine;
 }
 
+// ---------- Company Updates tab ----------
+function trustNamesForClient(c) {
+  const names = [];
+  (c.notary_evidence || []).forEach(item=>{
+    if (item && item.trust && !names.includes(item.trust)) names.push(item.trust);
+  });
+  return names.length ? names.join(', ') : '—';
+}
+function renderCompanyUpdates() {
+  const body = document.getElementById('companyUpdatesBody');
+  if (!body) return;
+  const query = (document.getElementById('companyUpdatesSearch')?.value || '').trim().toLowerCase();
+  const rows = allEffectiveClients()
+    .filter(c=>c.company || (c.notary_evidence && c.notary_evidence.length))
+    .filter(c=>{
+      const haystack = (trustNamesForClient(c) + ' ' + (c.company||'') + ' ' + (c.contact_name||'')).toLowerCase();
+      return !query || haystack.includes(query);
+    })
+    .sort((a,b)=>(a.company||'').localeCompare(b.company||''));
+  document.getElementById('companyUpdatesCount').textContent = rows.length + ' compan' + (rows.length===1 ? 'y' : 'ies');
+  body.innerHTML = rows.length ? rows.map(c=>{
+    const check = companyStatusMap[c.id];
+    const info = companyStatusInfo(c);
+    const detail = check?.rationale ? '<div class="sub company-status-detail" style="margin-top:4px;">'+escapeHtml(check.rationale)+'</div>' : '';
+    return '<tr data-id="'+escapeHtml(c.id)+'">'
+      + '<td>'+escapeHtml(trustNamesForClient(c))+'</td>'
+      + '<td><strong>'+escapeHtml(c.company||'—')+'</strong><div class="sub">'+escapeHtml(c.contact_name||'')+'</div></td>'
+      + '<td><span class="pill '+info.pill+'">'+info.label+'</span>'+detail+'</td>'
+      + '<td>'+(check?.checked_at ? new Date(check.checked_at).toLocaleString() : '—')+'</td>'
+      + '</tr>';
+  }).join('') : '<tr><td colspan="4" class="sub">No matching companies.</td></tr>';
+  body.querySelectorAll('tr[data-id]').forEach(row=>row.addEventListener('click', ()=>openDrawer(row.dataset.id)));
+}
+
 // ---------- Groq company status check ----------
 const COMPANY_VERDICT_META = {
   likely_active: {label:'Likely active', pill:'pill-green'},
@@ -1454,6 +1543,7 @@ async function checkCompanyStatus(id, company) {
     renderCompanyCheckResult(data);
     companyStatusMap[id] = {client_id:id, verdict:data.verdict, rationale:data.rationale, checked_at:data.checked_at};
     renderBacklog();
+    renderCompanyUpdates();
   } catch (err) {
     el.textContent = 'Check failed: ' + (err.message||err);
   }
@@ -1488,6 +1578,7 @@ async function batchCheckCompanies() {
     }
     done++;
     renderBacklog();
+    renderCompanyUpdates();
     await new Promise(r => setTimeout(r, 500)); // stay well under Groq's rate limit
   }
   status.textContent = 'Checked ' + done + ' companies — ' + flagged + ' possibly defunct, flagged for review.';
@@ -1505,6 +1596,7 @@ function renderAll() {
   renderCohorts();
   renderStageBreakdown();
   renderReview();
+  renderCompanyUpdates();
   renderAuditLog();
   renderSyncLine();
 }
@@ -1522,6 +1614,7 @@ document.querySelectorAll('.tab').forEach(tab=>{
     tab.classList.add('active');
     document.getElementById('tab-'+tab.dataset.tab).classList.add('active');
     if (tab.dataset.tab === 'cohorts') renderMonthlyChart();
+    if (tab.dataset.tab === 'companyupdates') renderCompanyUpdates();
   });
 });
 document.getElementById('drawerClose').addEventListener('click', closeDrawer);
@@ -1530,6 +1623,7 @@ document.getElementById('namesModalClose').addEventListener('click', closeNamesM
 document.getElementById('namesOverlay').addEventListener('click', closeNamesModal);
 document.getElementById('refreshBtn').addEventListener('click', refreshSlack);
 document.getElementById('batchCheckCompaniesBtn').addEventListener('click', batchCheckCompanies);
+document.getElementById('companyUpdatesSearch').addEventListener('input', renderCompanyUpdates);
 document.getElementById('exportCsvBtn').addEventListener('click', ()=>downloadCsv(currentCsvContent(), 'dynasty_backlog_export.csv'));
 document.getElementById('exportCohortCsvBtn').addEventListener('click', ()=>{
   const rows = window._cohortRows || [];
