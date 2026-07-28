@@ -337,10 +337,10 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
     <div class="company-updates-toolbar">
       <div>
         <h3 style="margin:0 0 4px;">Company Updates</h3>
-        <p class="sub" style="margin:0;">Review trust names, associated companies, and the latest company status check.</p>
+        <p class="sub" style="margin:0;">Review associated companies and the latest company status check.</p>
       </div>
       <div style="display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap;">
-        <div class="filter-group"><label>Filter companies</label><input type="text" id="companyUpdatesSearch" placeholder="Trust or company name&hellip;"></div>
+        <div class="filter-group"><label>Filter companies</label><input type="text" id="companyUpdatesSearch" placeholder="Company or contact name&hellip;"></div>
         <button id="batchCheckCompaniesBtn" class="primary">&#128269; Search companies</button>
       </div>
     </div>
@@ -348,7 +348,7 @@ code.small { font-size:11px; background:var(--gray-bg); padding:1px 5px; border-
     <div class="count-note" id="companyUpdatesCount"></div>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Trust Name</th><th>Company Name</th><th>Company Status</th><th>Last Checked</th></tr></thead>
+        <thead><tr><th>Company Name</th><th>Company Status</th><th>Last Checked</th></tr></thead>
         <tbody id="companyUpdatesBody"></tbody>
       </table>
     </div>
@@ -1464,13 +1464,6 @@ function renderSyncLine() {
 }
 
 // ---------- Company Updates tab ----------
-function trustNamesForClient(c) {
-  const names = [];
-  (c.notary_evidence || []).forEach(item=>{
-    if (item && item.trust && !names.includes(item.trust)) names.push(item.trust);
-  });
-  return names.length ? names.join(', ') : '—';
-}
 function renderCompanyUpdates() {
   const body = document.getElementById('companyUpdatesBody');
   if (!body) return;
@@ -1478,7 +1471,7 @@ function renderCompanyUpdates() {
   const rows = allEffectiveClients()
     .filter(c=>c.company || (c.notary_evidence && c.notary_evidence.length))
     .filter(c=>{
-      const haystack = (trustNamesForClient(c) + ' ' + (c.company||'') + ' ' + (c.contact_name||'')).toLowerCase();
+      const haystack = ((c.company||'') + ' ' + (c.contact_name||'')).toLowerCase();
       return !query || haystack.includes(query);
     })
     .sort((a,b)=>(a.company||'').localeCompare(b.company||''));
@@ -1488,12 +1481,11 @@ function renderCompanyUpdates() {
     const info = companyStatusInfo(c);
     const detail = check?.rationale ? '<div class="sub company-status-detail" style="margin-top:4px;">'+escapeHtml(check.rationale)+'</div>' : '';
     return '<tr data-id="'+escapeHtml(c.id)+'">'
-      + '<td>'+escapeHtml(trustNamesForClient(c))+'</td>'
       + '<td><strong>'+escapeHtml(c.company||'—')+'</strong><div class="sub">'+escapeHtml(c.contact_name||'')+'</div></td>'
       + '<td><span class="pill '+info.pill+'">'+info.label+'</span>'+detail+'</td>'
       + '<td>'+(check?.checked_at ? new Date(check.checked_at).toLocaleString() : '—')+'</td>'
       + '</tr>';
-  }).join('') : '<tr><td colspan="4" class="sub">No matching companies.</td></tr>';
+  }).join('') : '<tr><td colspan="3" class="sub">No matching companies.</td></tr>';
   body.querySelectorAll('tr[data-id]').forEach(row=>row.addEventListener('click', ()=>openDrawer(row.dataset.id)));
 }
 
