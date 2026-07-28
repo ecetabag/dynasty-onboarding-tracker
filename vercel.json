@@ -1,1 +1,7 @@
-{}
+{
+  "functions": {
+    "api/check-company.js": {
+      "maxDuration": 60
+    }
+  }
+}
