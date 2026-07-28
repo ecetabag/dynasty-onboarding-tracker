@@ -1,5 +1,9 @@
 {
   "name": "dynasty-onboarding-tracker",
   "version": "1.0.0",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "@vercel/postgres": "^0.10.0",
+    "jose": "^5.9.6"
+  }
 }
